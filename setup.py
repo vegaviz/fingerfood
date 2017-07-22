@@ -8,7 +8,7 @@ setup(
       description='Document fingerprinting for duplicate detection',
       author='andrea capitanelli',
       author_email='vegavis(at)live.com',
-      #url='https://www.python.org/sigs/distutils-sig/',
+      url='https://github.com/vegaviz/fingerfood',
       packages=['fingerfood'],
       package_dir={'fingerfood': 'fingerfood'},
      )
