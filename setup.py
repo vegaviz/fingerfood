@@ -7,7 +7,7 @@ with open('README.md','r') as f:
 
 setup(
       name='fingerfood',
-      version='1.0.0',
+      version='1.0.1',
       description='Document fingerprinting for duplicate detection',
       author='andrea capitanelli',
       author_email='andrea.capitanelli@gmail.com',
