@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-from distutils.core import setup
+from setuptools import setup
 
 with open('README.md','r') as f:
     long_description = f.read()
 
 setup(
       name='fingerfood',
-      version='1.0.1',
+      version='1.0.3',
       description='Document fingerprinting for duplicate detection',
       author='andrea capitanelli',
       author_email='andrea.capitanelli@gmail.com',
