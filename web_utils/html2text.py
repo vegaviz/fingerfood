@@ -16,46 +16,21 @@ RE_SPAN = re.compile(r'<span.*?>(.+?)<\/span>', re.MULTILINE|re.DOTALL)
 RE_IMG = re.compile(r'<img .+?>', re.MULTILINE|re.DOTALL)
 RE_GEN = re.compile(r'<.+?>', re.MULTILINE|re.DOTALL)
 
-# list of encoding codes - TBC
-DEFAULT_DECODING = {
-    '&#8217;': '\'',
-    '&nbsp;': ' ',
-    '&quot;': '"',
-    '&#8220;': '"',
-    '&#8221;': '"',
-    '&apos;': '\'',
-    '&#39;': '\'',
-    '&#8211;': '-',
-    '&agrave;': 'à',
-    '&egrave;': 'è',
-    '&eacute;': 'é',
-    '&igrave;': 'ì',
-    '&ograve;': 'ò',
-    '&ugrave;': 'ù',
-    '7&deg;': '°',
-    '&amp;': '&',
-    '&rsquo;': '\'',
-    '&rdquo;': '"',
-    '&ldquo;': '"',
-    '&raquo;': '>',
-    '&laquo;': '<',
-    '&ndash;': '-'
-}
-
 class Html2Text:
     """ Class for extracting text from raw html.
 
     Includes a few simple methods for TAG cleansing and string url-decoding.
     """
 
-    def __init__(self, len_thr=50, decoding=DEFAULT_DECODING):
+    def __init__(self, len_thr=50, decoding=None):
         """Object initialization.
 
         Args:
             len_thr: Length threshold (characters). Only text fragments longer
                 than threshold will be extracted.
-            decoding: A dict for url-decoding. Keys and values contain the
-                encoded and decoded strings respectively.
+            decoding: Data for url-decoding (optional). If specified, must be
+                a dict where keys and values are respectively encoded and
+                decoded strings.
         """
         self.len_thr = len_thr
         self.decoding = decoding
@@ -77,7 +52,8 @@ class Html2Text:
         parts = []
         for m in RE_P.finditer(html):
 
-            text = self._decode(m.group(1))
+            if self.decoding:
+                text = self._decode(m.group(1))
             text = self._clean_text(text)
 
             if len(text) > self.len_thr:
@@ -86,20 +62,15 @@ class Html2Text:
         return parts
 
     def _clean_text(self, text):
-
-        # remove tags
+        """ Removes A, SPAN and spurious tags. """
         text = self._extract_from_tag(RE_A, text)
         text = self._extract_from_tag(RE_SPAN, text)
-
-        # remove spurious
         text = RE_GEN.sub('', text).strip()
 
         return text
 
     def _declutter(self, html):
-        """ De-clutters raw html. """
-
-        # useless parts
+        """ Removes extra-text sections and style tags. """
         html = RE_HEAD.sub('', html)
         html = RE_SCRIPTS.sub('', html)
         html = RE_NOSCRIPT.sub('', html)
@@ -107,8 +78,6 @@ class Html2Text:
         html = RE_COMMENT.sub('', html)
         html = RE_SPACES.sub(' ', html)
         html = RE_IMG.sub(' ', html)
-
-        # remove style tags
         html = html.replace('<em>', '').replace('</em>', '')
         html = html.replace('<strong>', '').replace('</strong>', '')
 
