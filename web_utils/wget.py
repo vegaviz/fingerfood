@@ -9,10 +9,77 @@ from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from requests import Session
 
+SCHEME_SEP = '://'
 HTTP_SCHEME = 'http'
 HTTPS_SCHEME = 'https'
 HTML_CONTENT = 'text/html'
 RE_LINKS = re.compile(r'(href|src)="(\S+)"')
+
+class Url:
+    """Class for URL objects. Performs sanity checks on URL string and manages
+    its components, including scheme, hierarchical domains and extensions.
+
+    Attributes:
+        url: Original URL string.
+        scheme: HTTP or HTTPS.
+        loc: Path of URL.
+        domain: Domain of URL.
+        ext: The extension of URL resource (if present).
+        """
+
+    def __init__(self, url):
+        """Object initialization.
+
+        Args:
+            url: URL string.
+        """
+
+        self.url = url
+        self.scheme = self._check_scheme(url)
+        self.loc = url.split(SCHEME_SEP)[1]
+
+        parts = self.loc.split('/')
+        self.domain = parts[0]
+        self.ext = self._get_ext(parts)
+
+    def _check_scheme(self, url):
+        """Checks the validity of URL scheme."""
+        if url[:7] == HTTP_SCHEME + SCHEME_SEP:
+            scheme = HTTP_SCHEME
+            loc = url[7:]
+        elif url[:8] == HTTPS_SCHEME + SCHEME_SEP:
+            scheme = HTTPS_SCHEME
+            loc = url[8:]
+        else:
+            raise ValueError('No scheme or scheme not supported')
+
+        return scheme
+
+    def _get_ext(self, parts):
+        """Checks presence of a file extension in url."""
+        if len(parts) > 1:
+            resource = parts[-1]
+            res_parts = resource.split('.')
+            if len(res_parts) > 1:
+                ext = res_parts[-1]
+            else:
+                ext = None
+        else:
+            ext = None
+
+        return ext
+
+    def matches_domains(self, other_domains):
+        """Checks if url domain matches against a list of given domains."""
+        res = False
+
+        for domain in other_domains:
+            if domain in self.domain:
+                res = True
+                break
+
+        return res
+
 
 class Wget:
     """A convenient implementation of wget GNU utility.
@@ -24,9 +91,9 @@ class Wget:
     """
 
     def __init__(self, conn_timeout=3, retries=3, backoff_factor=0.3,
-        status_forcelist=(500,502,503,504), recursive=False, recursion_level=3,
-        accept_ext=[], reject_ext=[], include_domains=[], exclude_domains=[],
-        datapath=None):
+        status_forcelist=(500, 502, 503, 504), recursive=False,
+        recursion_level=3, accept_ext=[], reject_ext=[], include_domains=[],
+        exclude_domains=[], datapath=None):
         """Object initialization.
 
         Args:
@@ -58,14 +125,14 @@ class Wget:
         self.include_domains = include_domains
         self.exclude_domains = exclude_domains
         # download
-        self.accept_ext=accept_ext
-        self.reject_ext=reject_ext
+        self.accept_ext = accept_ext
+        self.reject_ext = reject_ext
         # globally set visited urls and download metadata
         self.visited = set()
         self.data_index = []
 
     def get(self, url, **kwargs):
-        """ Starts crawling the given url. """
+        """Starts crawling the given url. """
 
         # kept  at object-level
         visited = self.visited
@@ -76,8 +143,8 @@ class Wget:
             makedirs(self.datapath)
 
         # override object settings
-        for k,v in kwargs.items():
-            setattr(self,k,v)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
         # set recursion
         if self.recursive:
@@ -97,14 +164,12 @@ class Wget:
             for url in curr_links:
 
                 # clean & check
-                url = self._clean_url(url)
-                scheme, domain, ext = self._check_url(url)
+                _url = Url(url)
 
-                loc = self._get_loc(url, scheme)
-                if loc in visited:
+                if _url.loc in visited:
                     continue
                 else:
-                    visited.add(loc)
+                    visited.add(_url.loc)
 
                 try:
                     resp = session.get(url)
@@ -114,27 +179,28 @@ class Wget:
 
                 else:
 
-                    if self._check_download(ext):
+                    if self._check_download(_url.ext):
 
                         uid = uuid.uuid4().hex
-                        filename = self._save_data(resp, domain, ext, uid)
+                        filename = self._save_data(resp, _url, uid)
 
                         if filename:
                             data_index.append(
                                 {
                                     'filename': filename,
                                     'url': url,
-                                    'domain': domain,
+                                    'domain': _url.domain,
                                     'timestamp': self._timestamp()
                                 }
                             )
 
                     content_type = resp.headers.get('Content-Type')
+
                     if content_type and content_type.find(HTML_CONTENT) != -1:
 
                         # search for links
                         html = resp.text
-                        links = self._extract_links(scheme, domain, html)
+                        links = self._extract_links(_url, html)
 
                         next_links += links
 
@@ -158,15 +224,15 @@ class Wget:
 
         return session
 
-    def _save_data(self,resp,domain,ext,name):
-        """ save data to file """
+    def _save_data(self, resp, _url, name):
+        """Saves data to file """
 
-        filepath = path.join(self.datapath, domain)
+        filepath = path.join(self.datapath, _url.domain)
         if not path.isdir(filepath):
             makedirs(filepath)
 
-        if ext:
-            filename = path.join(filepath, name + '.' + ext)
+        if _url.ext:
+            filename = path.join(filepath, name + '.' + _url.ext)
         else:
             filename = path.join(filepath, name)
 
@@ -175,14 +241,7 @@ class Wget:
 
         return filename
 
-    def _clean_url(self, url):
-
-        url = url.strip()
-        if url[-1] == '/':
-            url = url[:-1]
-        return url
-
-    def _extract_links(self, scheme, domain, html):
+    def _extract_links(self, _url, html):
 
         links = []
 
@@ -195,19 +254,28 @@ class Wget:
             lnk = lnk.split('#')[0]
 
             if lnk:
+
                 if lnk[0:2] == '//':
-                    lnk = '{0}://{1}'.format(scheme, lnk[2:])
+                    lnk = '{0}://{1}'.format(_url.scheme, lnk[2:])
                 elif lnk[0] == '/':
-                    lnk = '{0}://{1}{2}'.format(scheme, domain, lnk)
+                    lnk = '{0}://{1}{2}'.format(_url.scheme, _url.domain, lnk)
 
                 try:
-                    scheme, domain, ext = self._check_url(lnk)
 
-                    if (not self.include_domains or (self.include_domains and \
-                        domain in self.include_domains)) and \
-                        (not self.exclude_domains or \
-                        domain not in self.exclude_domains):
+                    _lnk = Url(lnk)
+
+                    check_include = (not self.include_domains) or \
+                        _lnk.matches_domains(self.include_domains)
+
+                    check_exclude = (not self.exclude_domains) or \
+                        (not _lnk.matches_domains(self.exclude_domains))
+
+                    if check_include and check_exclude:
+                        print(f'Added {lnk}')
                         links.append(lnk)
+
+                    else:
+                        print(f'Rejected {lnk}')
 
                 except ValueError:
                     # link not valid
@@ -233,43 +301,6 @@ class Wget:
             download = False
 
         return download
-
-    def _check_url(self, url):
-        """ Analyzes/validates url format. """
-
-        if url[:7] == 'http://':
-            scheme = 'http'
-            loc = url[7:]
-        elif url[:8] == 'https://':
-            scheme = 'https'
-            loc = url[8:]
-        else:
-            raise ValueError('No scheme or scheme not supported')
-
-        parts = loc.split('/')
-        domain = parts[0]
-        if len(parts) > 1:
-            resource = parts[-1]
-            # extension
-            res_parts = resource.split('.')
-            if len(res_parts) > 1:
-                ext = res_parts[-1]
-            else:
-                ext = None
-        else:
-            ext = None
-
-        return scheme, domain, ext
-
-    def _get_loc(self, url, scheme):
-        """ Strips scheme from url. """
-        if scheme == HTTP_SCHEME:
-            loc = url[7:]
-        elif scheme == HTTPS_SCHEME:
-            loc = url[8:]
-        else:
-            raise ValueError('Scheme not supported')
-        return loc
 
     def _timestamp(self):
         """ Generates a timestamp of download. """
